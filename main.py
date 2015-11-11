@@ -1,5 +1,7 @@
 # -*- coding:utf8 -*-
 
+from collections import defaultdict, Counter
+
 import requests
 from bs4 import BeautifulSoup as bs
 
@@ -15,37 +17,78 @@ def goal_type(goal, history):
         raise Exception
 
 
-def parse_goals(goals, match):
+def parse_goals(goal_data, match):
+    HOME = False
+    AWAY = True
+    
+    goals = []
     score = [0, 0]
 #          home away
-    winning_goal = None
+    winning_candidates = []
+    prev_leading = None
 
-    for goal in goals.find_all('li'):
+    for goal in goal_data.find_all('li'):
         info = goal.find('div', class_='sb-aktion-aktion')
+        
+        club = goal['class'][0] == 'sb-aktion-gast'
         own_goal = 'Own-goal' in info.text
-        home = goal['class'][0] == 'sb-aktion-heim'
 
         aa = info.find_all('a')
-        scorer = aa[0].text
+        scorer = aa[0].text.strip()
         assist = None
         if len(aa) > 1:
-            assist = aa[1].text
-
-        score[not home] += 1
-
-        if home ^ own_goal:  # home player goal
-            player = models.Player(match.home, scorer)
-        else:
+            assist = aa[1].text.strip()
+        
+        score[club] += 1
+        if club ^ own_goal:  # away player goal
             player = models.Player(match.away, scorer)
-
+        else:  # home player goal
+            player = models.Player(match.home, scorer)
+        
         goal = models.Goal(match, player, own_goal, assist)
-        match.goals.append(goal)
+        goals.append(goal)
 
-    print(score)
-    for goal in match.goals:
-        goal_type(goal, match.goals)
-        print(goal.player)
+        leading = None if score[HOME] == score[AWAY] else score[HOME] < score[AWAY]
+        
+        if prev_leading is None:
+            if sum(score) == 1: # winning candidate
+                pass
+            else: # turnover, winning candidate
+                goal.type = 'turnover'
 
+            winning_candidates.append(len(goals))
+        else:
+            if leading is None: # equalizer
+                goal.type = 'equalizer'
+
+                winning_candidates.pop(0)
+            else: # normal goal
+                if leading == club ^ own_goal: # chase goal
+                    winning_candidates.append(len(goals))
+                else:
+                    winning_candidates.pop(0)
+
+        prev_leading = leading
+        
+    winning_goal = None
+    if winning_candidates:
+        winning_goal = winning_candidates.pop(0)
+        goals[winning_goal - 1].type = 'winning'
+
+    for goal in goals:
+        if goal.type == 'goal':
+            pass
+        elif goal.type == 'equalizer':
+            goal.point = 1.5
+        elif goal.type == 'turnover':
+            goal.point = 2
+        elif goal.type == 'winning':
+            goal.point = 3
+
+        if goal.own_goal:
+            goal.point *= -1
+
+    return goals
 
 def parse_match(match_soup, league, matchday):
     c = match_soup.find_all('div', class_='sb-team')
@@ -60,15 +103,13 @@ def parse_match(match_soup, league, matchday):
         league.clubs[ta] = models.Club(league, ta)
     ta = league.clubs[ta]
 
-    print(th, ta)
-
     match = models.Match(league, matchday, th, ta)
-    league.matches[matchday - 1].append(match)
 
     goals = match_soup.find('div', id='sb-tore')
     if goals is not None:
-        parse_goals(goals, match)
+        match.goals = parse_goals(goals, match)
 
+    return match
 
 def main():
     s = requests.Session()
@@ -81,11 +122,13 @@ def main():
     for year in range(2015, 2016):
         for league, league_id in leagues.items():
             lg = models.League(league, year)
-            points_total = {} # 전체 경기수로 normalize?
+            points_total = Counter()  # 전체 경기수로 normalize?
             points_matchdays = []
 
-            for matchday in range(1, 2):
-                lg.matches.append([])
+            for matchday in range(1, 13):
+                matches = []
+                points_matchday = defaultdict(float)
+
                 matches_url = matchday_url.format(league_id)
                 r = s.get(matches_url, params={'saison_id': year, 'spieltag': matchday})
                 soup = bs(r.content, "lxml")
@@ -96,7 +139,20 @@ def main():
                     r = s.get(report_url)
                     soup = bs(r.content, "lxml")
 
-                    parse_match(soup, lg, matchday)
+                    match = parse_match(soup, lg, matchday)
+                    matches.append(match)
+
+                    for goal in match.goals:
+                        points_matchday[goal.player] += goal.point
+                
+                lg.matches.append(matches)
+                points_matchdays.append(points_matchday)
+            
+            for points_matchday in points_matchdays:
+                points_total.update(points_matchday)
+
+            for player, point in points_total.items():
+                print(player, ':', point)
 
 if __name__ == '__main__':
     main()

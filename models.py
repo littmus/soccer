@@ -18,7 +18,7 @@ class Club(object):
         self.players = []
 
     def __repr__(self):
-        return '{} - {}'.format(self.league, self.name)
+        return '{} - {}'.format(self.league.name, self.name)
 
     def __hash__(self):
         return hash(str(self))
@@ -68,6 +68,8 @@ class Match(object):
         self.away_goals = []
         self.goals = []
 
+    def __repr__(self):
+        return '{} ({}) {} vs {}'.format(self.league, self.round, self.home.name, self.away.name)
 
 class Goal(object):
 
@@ -76,3 +78,8 @@ class Goal(object):
         self.player = player
         self.own_goal = own_goal
         self.assist = assist
+        self.type = 'goal'
+        self.point = 0.5
+
+    def __repr__(self):
+        return '{} - {}{} {} {}'.format(self.match, self.player, ' (O.G)' if self.own_goal else '', self.type, self.point)
