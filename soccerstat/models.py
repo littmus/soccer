@@ -1,6 +1,5 @@
 from django.db import models
 
-
 class League(models.Model):
     name = models.CharField(max_length=100, null=False, blank=False)
     year = models.IntegerField(null=False, blank=False)
@@ -10,12 +9,32 @@ class League(models.Model):
 
 
 class Player(models.Model):
-    name = models.CharField(max_length=100)
-    goal_point = models.FloatField(default=0)
-    assist_point = models.FloatField(default=0)
+    name = models.CharField(max_length=100, null=False, blank=False)
 
     def __str__(self):
         return self.name
+
+    def goal_point(self, round=None):
+        p = 0
+        scores = Scored.objects.filter(scorer=self)
+        if round:
+            scores.filter(match__round=round)
+
+        for score in scores:
+            p += score.goal.point
+
+        return p
+
+    def assist_point(self, round=None):
+        p = 0
+        scores = Scored.objects.filter(assist=self)
+        if round:
+            scores.filter(match__round=round)
+
+        for score in scores:
+            p += score.goal.point
+
+        return p
 
 
 class Club(models.Model):
@@ -79,14 +98,24 @@ class Scored(models.Model):
     match = models.ForeignKey(Match)
     goal = models.ForeignKey(Goal)
     scorer = models.ForeignKey(Player, related_name='scorer', null=False)
-    assist = models.ForeignKey(Player, related_name='assist', null=True, blank=True, default=None)
+    assist = models.ForeignKey(Player, related_name='assist', null=True, default=None)
 
     def __str__(self):
         return '{} - {}{}'.format(self.match, self.scorer, self.goal)
-
+    """
     def save(self, *args, **kwargs):
         self.scorer.goal_point += self.goal.point
+        self.scorer.
+        self.scorer.
         if self.assist:
             self.assist.assist_point += self.goal.point
 
         super(Scored, self).save(*args, **kwargs)
+
+def update_player_score(sender, instance, created, **kwargs):
+    scorer = Player.objects.get(id=instance.scorer.id)
+    scorer.goal_point += instance.goal.point
+    scorer.save()
+
+models.signals.post_save.connect(update_player_score, sender=Scored)
+    """
