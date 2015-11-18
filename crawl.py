@@ -105,7 +105,7 @@ def main():
     s.mount('http://www.transfermarkt.co.uk', HTTPAdapter(max_retries=5))
 
     leagues = {
-#        'EPL': 'GB1',
+        'EPL': 'GB1',
         'La Liga': 'ES1',
     }
 
